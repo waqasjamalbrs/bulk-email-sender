@@ -14,26 +14,35 @@ from email.mime.text import MIMEText
 from email.header import Header
 
 # ==========================================
-# 1. PAGE SETUP
+# 1. SESSION STATE (Data Save Rakhne k liye)
 # ==========================================
-st.set_page_config(page_title="SEO Outreach Pro", page_icon="📨", layout="wide")
+if 'logs' not in st.session_state:
+    st.session_state.logs = []
+if 'campaign_active' not in st.session_state:
+    st.session_state.campaign_active = False
+
+# ==========================================
+# 2. PAGE CONFIG
+# ==========================================
+st.set_page_config(page_title="Multi-Campaign Emailer", page_icon="🚀", layout="wide")
 st.markdown("""
     <style>
-    .main { background-color: #f7f9fc; }
+    .main { background-color: #f4f6f9; }
     .stButton>button { 
-        background: linear-gradient(90deg, #1d976c, #93f9b9); 
-        color: #004d2e; border: none; height: 50px; font-size: 18px; font-weight: bold;
-        border-radius: 8px; width: 100%;
+        border-radius: 8px; font-weight: bold; height: 45px; width: 100%;
     }
-    .uploaded-file-box { border: 2px dashed #4CAF50; padding: 10px; border-radius: 5px; background-color: #e8f5e9; }
-    .instruction-box { background-color: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 5px solid #2196f3; }
-    .success-box { padding: 10px; background-color: #d4edda; color: #155724; border-radius: 5px; }
-    .error-box { padding: 10px; background-color: #f8d7da; color: #721c24; border-radius: 5px; }
+    .live-stat {
+        padding: 15px; border-radius: 8px; background: white; 
+        border-left: 5px solid #2196F3; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .subject-box textarea {
+        background-color: #e3f2fd; border: 1px solid #90caf9;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. CORE FUNCTIONS
+# 3. HELPER FUNCTIONS
 # ==========================================
 PROVIDERS = {
     "Hostinger": {"smtp": "smtp.hostinger.com", "port": 465, "imap": "imap.hostinger.com", "i_port": 993},
@@ -43,7 +52,6 @@ PROVIDERS = {
 }
 
 def test_smtp_connection(conf, user, password):
-    """Test login credentials without sending email"""
     try:
         if conf['port'] == 465:
             server = smtplib.SMTP_SSL(conf['smtp'], conf['port'])
@@ -52,7 +60,7 @@ def test_smtp_connection(conf, user, password):
             server.starttls()
         server.login(user, password)
         server.quit()
-        return True, "Connection Successful! ✅"
+        return True, "Login Successful! ✅"
     except Exception as e:
         return False, str(e)
 
@@ -94,278 +102,233 @@ def save_sent(conf, user, password, raw_msg):
         pass
 
 # ==========================================
-# 3. SIDEBAR SETTINGS
+# 4. SIDEBAR
 # ==========================================
 with st.sidebar:
-    st.title("⚙️ Configuration")
+    st.header("⚙️ Settings")
     
-    st.subheader("1. Email Service")
-    p = st.selectbox("Select Provider", list(PROVIDERS.keys()))
+    # Credentials
+    p = st.selectbox("Provider", list(PROVIDERS.keys()))
     conf = PROVIDERS[p]
     if p == "Custom":
         conf['smtp'] = st.text_input("SMTP Host")
         conf['port'] = st.number_input("SMTP Port", 465)
+        
+    e_user = st.text_input("Email Address")
+    e_pass = st.text_input("Password", type="password")
+    sender_name = st.text_input("Sender Name", "Joseph Miller")
     
-    st.divider()
-    st.subheader("2. Your Credentials")
-    e_user = st.text_input("Your Email Address")
-    e_pass = st.text_input("Password / App Password", type="password")
-    sender_name = st.text_input("Sender Name (Display)", "Joseph Miller")
-    
-    # --- TEST CONNECTION BUTTON ---
-    if st.button("🔌 Test Connection"):
+    if st.button("🔌 Test Login"):
         if e_user and e_pass:
-            with st.spinner("Testing login..."):
-                ok, msg = test_smtp_connection(conf, e_user, e_pass)
-                if ok:
-                    st.success(msg)
-                else:
-                    st.error(f"Failed: {msg}")
+            ok, msg = test_smtp_connection(conf, e_user, e_pass)
+            if ok: st.success(msg)
+            else: st.error(msg)
         else:
-            st.warning("Enter Email & Password first.")
+            st.warning("Fill credentials first.")
+
+    st.divider()
+    limit = st.number_input("Daily Limit", 50, 5000, 100)
+    d_min = st.number_input("Min Delay", 5)
+    d_max = st.number_input("Max Delay", 20)
     
     st.divider()
-    st.subheader("3. Safety Limits")
-    limit = st.number_input("Stop after sending X emails", 50, 5000, 100)
-    d_min = st.number_input("Min Delay (Seconds)", 5)
-    d_max = st.number_input("Max Delay (Seconds)", 20)
+    if st.button("🗑️ Clear All History", type="primary"):
+        st.session_state.logs = []
+        st.rerun()
 
 # ==========================================
-# 4. MAIN INTERFACE
+# 5. MAIN UI
 # ==========================================
-st.title("📨 Ultimate SEO Outreach Tool")
-st.markdown("Supports: **HTML File Upload**, **Company Grouping**, & **Strict Variables**.")
+st.title("🚀 Smart SEO Outreach (Global Subjects)")
 
-col1, col2 = st.columns([1, 2])
+col1, col2 = st.columns([1, 1.5])
 
-# --- LEFT COLUMN: DATA UPLOAD ---
 with col1:
-    st.subheader("📂 Step 1: Upload Recipients Data")
-    f = st.file_uploader("Upload Excel/CSV File", type=['xlsx', 'csv'])
-    
+    st.subheader("1. Recipients Data")
+    f = st.file_uploader("Upload Excel/CSV", type=['xlsx', 'csv'])
     if f:
-        st.success("File Uploaded Successfully!")
-        try:
-            if f.name.endswith('.csv'): 
-                preview_df = pd.read_csv(f)
-            else: 
-                preview_df = pd.read_excel(f)
-            st.dataframe(preview_df.head(3), hide_index=True)
-            st.caption(f"Total Rows Found: {len(preview_df)}")
-        except:
-            pass
+        st.success("File Loaded!")
 
-# --- RIGHT COLUMN: TEMPLATES ---
+    st.divider()
+    st.subheader("2. Global Subject Lines")
+    st.caption("Enter ALL subject lines here (One per line). System will pick randomly.")
+    global_subjects_raw = st.text_area("Subject Lines", height=200, placeholder="Collaboration for {Website}\nFeature opportunity for {Company}\nQuestion regarding {Name}", key="glob_subs")
+
 with col2:
-    st.subheader("📝 Step 2: Templates Strategy")
-    st.caption("Upload HTML files for body. System will rotate templates per company.")
+    st.subheader("3. Email Body Templates (HTML)")
+    st.caption("Upload HTML files. Code will rotate these templates per company.")
     
     tabs = st.tabs(["Template 1", "Template 2", "Template 3", "Template 4", "Template 5"])
-    tpls = []
+    body_templates = []
     
     for i, tab in enumerate(tabs):
         with tab:
-            st.markdown(f"**Template {i+1} Setup**")
-            
-            # Subject Input (Manual)
-            raw_s = st.text_area(
-                f"Subject Lines for T{i+1} (One per line)", 
-                height=100, 
-                key=f"s_{i}",
-                placeholder="Collaboration for {Website}\nQuick question regarding {Company}"
-            )
-            
-            # Body Input (FILE UPLOAD)
-            st.markdown("**Email Body HTML:**")
-            body_file = st.file_uploader(f"Upload .txt or .html for Template {i+1}", type=['html', 'txt'], key=f"f_{i}")
-            
-            final_body_content = ""
-            
-            # Read uploaded file content
-            if body_file is not None:
-                stringio = io.StringIO(body_file.getvalue().decode("utf-8"))
-                final_body_content = stringio.read()
-                st.markdown(f"<div class='uploaded-file-box'>✅ Loaded: {len(final_body_content)} characters</div>", unsafe_allow_html=True)
-                with st.expander("👁️ Preview HTML Content"):
-                    st.code(final_body_content, language='html')
-
-            # Store Valid Templates
-            if raw_s and final_body_content:
-                s_list = [x.strip() for x in raw_s.split('\n') if x.strip()]
-                tpls.append({"id": f"Template {i+1}", "subjects": s_list, "body": final_body_content})
+            b_file = st.file_uploader(f"Upload HTML for Body {i+1}", type=['html', 'txt'], key=f"b{i}")
+            if b_file:
+                b_content = io.StringIO(b_file.getvalue().decode("utf-8")).read()
+                st.caption(f"✅ Loaded {len(b_content)} chars")
+                body_templates.append({"id": f"Body-T{i+1}", "content": b_content})
 
 # ==========================================
-# 5. LOGIC & EXECUTION
+# 6. REAL-TIME DASHBOARD
 # ==========================================
 st.divider()
+st.subheader("📊 Live Campaign Status")
 
-if st.button("🚀 START CAMPAIGN"):
-    # --- VALIDATION ---
-    if not f:
-        st.error("❌ Please upload the Recipients Data file first.")
-    elif not e_user or not e_pass:
-        st.error("❌ Please enter Email and Password in Sidebar.")
-    elif not tpls:
-        st.error("❌ Please upload at least one Template Body file and add Subject lines.")
+status_placeholder = st.empty()
+progress_bar = st.progress(0)
+table_placeholder = st.empty()
+
+# Show history if exists
+if st.session_state.logs:
+    hist_df = pd.DataFrame(st.session_state.logs)
+    table_placeholder.dataframe(hist_df, use_container_width=True)
+
+# ==========================================
+# 7. EXECUTION LOGIC
+# ==========================================
+if st.button("🚀 START CAMPAIGN NOW"):
+    # Validation
+    if not f or not e_user or not e_pass:
+        st.error("Missing File or Credentials.")
+    elif not global_subjects_raw.strip():
+        st.error("Please enter at least one Subject Line.")
+    elif not body_templates:
+        st.error("Please upload at least one HTML Body Template.")
     else:
-        # --- 1. READ FILE ---
+        # Prepare Subjects List
+        subject_list = [s.strip() for s in global_subjects_raw.split('\n') if s.strip()]
+        
+        # --- PREPARE DATA ---
         try:
             if f.name.endswith('.csv'): df = pd.read_csv(f)
             else: df = pd.read_excel(f)
-        except Exception as e:
-            st.error(f"Error reading recipients file: {e}")
+        except:
+            st.error("Error reading file.")
             st.stop()
             
-        # --- 2. PRE-PROCESS DATA ---
         all_contacts = []
-        
         for _, row in df.iterrows():
-            # Handle multiple emails
             raw_emails = str(row.get('Email', '')).split(',')
-            
-            # Variables
             name_val = str(row.get('Name', 'there')).strip()
             
-            # Fetch Company/Website Columns
-            company_col = str(row.get('Company', '')).strip()
-            website_col = str(row.get('Website', '')).strip()
+            # Company/Website Logic (Strict)
+            comp_col = str(row.get('Company', '')).strip()
+            web_col = str(row.get('Website', '')).strip()
             
-            # Clean 'nan'
-            if company_col.lower() == 'nan': company_col = ""
-            if website_col.lower() == 'nan': website_col = ""
+            if comp_col.lower() == 'nan': comp_col = ""
+            if web_col.lower() == 'nan': web_col = ""
             
-            # Display Logic
-            final_comp_txt = company_col if company_col else (website_col if website_col else "your company")
-            final_web_txt = website_col if website_col else (company_col if company_col else "your website")
+            d_comp = comp_col if comp_col else (web_col if web_col else "your company")
+            d_web = web_col if web_col else (comp_col if comp_col else "your website")
             
             for em in raw_emails:
                 clean_em = em.strip()
                 if "@" in clean_em:
-                    # Grouping Logic
-                    tech_domain = get_technical_domain(clean_em)
-                    group_key = company_col if company_col else tech_domain
-                    
+                    # Grouping Key
+                    grp = comp_col if comp_col else get_technical_domain(clean_em)
                     all_contacts.append({
-                        "GroupKey": group_key,
-                        "DisplayComp": final_comp_txt,
-                        "DisplayWeb": final_web_txt,
-                        "Email": clean_em,
-                        "Name": name_val,
-                        "RowData": row
+                        "Group": grp, "D_Comp": d_comp, "D_Web": d_web,
+                        "Email": clean_em, "Name": name_val, "Row": row
                     })
         
-        # --- 3. GROUPING ---
-        grouped_data = defaultdict(list)
-        for c in all_contacts:
-            grouped_data[c['GroupKey']].append(c)
+        grouped = defaultdict(list)
+        for c in all_contacts: grouped[c['Group']].append(c)
         
-        st.success(f"✅ Loaded {len(all_contacts)} emails. Grouped into {len(grouped_data)} unique Companies.")
-        
-        # --- 4. SENDING LOOP ---
-        prog_bar = st.progress(0)
-        status_text = st.empty()
-        
-        report_rows = []
-        sent_total = 0
-        cycle = itertools.cycle(tpls)
+        total_groups = len(grouped)
+        tpl_cycle = itertools.cycle(body_templates) # Rotate Bodies
         curr_idx = 0
-        total_groups = len(grouped_data)
+        campaign_sent = 0
         
-        for g_key, contacts in grouped_data.items():
-            if sent_total >= limit: 
-                st.warning("🛑 Daily Limit Reached!"); break
-            
-            curr_tpl = next(cycle)
-            group_results = []
-            
-            display_grp_name = contacts[0]['DisplayComp'] if contacts[0]['DisplayComp'] != "your company" else g_key
-            status_text.markdown(f"**Processing:** `{display_grp_name}` | using {curr_tpl['id']}")
-            
-            for person in contacts:
-                email = person['Email']
-                name = person['Name']
+        # --- SENDING LOOP ---
+        for grp_key, contacts in grouped.items():
+            if campaign_sent >= limit:
+                st.warning("Daily limit reached!"); break
                 
-                # Random Subject
-                if curr_tpl['subjects']: 
-                    subj_base = random.choice(curr_tpl['subjects'])
-                else: 
-                    subj_base = "Hello"
+            curr_body = next(tpl_cycle) # Next HTML Template
+            
+            # UI Update
+            display_name = contacts[0]['D_Comp'] if contacts[0]['D_Comp'] != "your company" else grp_key
+            status_placeholder.markdown(f"""
+                <div class="live-stat">
+                    <h4>🔄 Processing: {display_name}</h4>
+                    <p>Emails: {len(contacts)} | Body: {curr_body['id']}</p>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            for p in contacts:
+                # Pick Random Subject from GLOBAL list
+                curr_subj = random.choice(subject_list)
                 
-                # Personalization
-                sub = subj_base.replace("{Name}", name).replace("{Company}", person['DisplayComp']).replace("{Website}", person['DisplayWeb'])
-                bod = curr_tpl['body'].replace("{Name}", name).replace("{Company}", person['DisplayComp']).replace("{Website}", person['DisplayWeb'])
+                # Variables Replacement
+                sub = curr_subj.replace("{Name}", p['Name']).replace("{Company}", p['D_Comp']).replace("{Website}", p['D_Web'])
+                bod = curr_body['content'].replace("{Name}", p['Name']).replace("{Company}", p['D_Comp']).replace("{Website}", p['D_Web'])
                 
                 # Extra Columns
-                for col in df.columns:
-                     val = str(person['RowData'].get(col, ''))
-                     sub = sub.replace(f"{{{col}}}", val)
-                     bod = bod.replace(f"{{{col}}}", val)
+                for k in df.columns:
+                    val = str(p['Row'].get(k, ''))
+                    sub = sub.replace(f"{{{k}}}", val)
+                    bod = bod.replace(f"{{{k}}}", val)
                 
                 # Send
-                ok, msg = send_email_smtp(conf, e_user, e_pass, email, name, sender_name, sub, bod)
+                ok, msg = send_email_smtp(conf, e_user, e_pass, p['Email'], p['Name'], sender_name, sub, bod)
                 
-                if ok:
+                status = "✅ Sent" if ok else "❌ Failed"
+                if ok: 
                     save_sent(conf, e_user, e_pass, msg)
-                    sent_total += 1
-                    group_results.append(f"✅ {email}")
-                else:
-                    group_results.append(f"❌ {email} ({msg})")
+                    campaign_sent += 1
                 
-                time.sleep(2) 
+                # --- UPDATE REAL-TIME LOGS ---
+                new_log = {
+                    "Time": datetime.now().strftime("%H:%M:%S"),
+                    "Company": display_name,
+                    "Email": p['Email'],
+                    "Status": status,
+                    "Template": curr_body['id'],
+                    "Subject Used": sub,
+                    "Error": msg if not ok else ""
+                }
+                
+                st.session_state.logs.append(new_log)
+                
+                # Refresh Table
+                current_df = pd.DataFrame(st.session_state.logs)
+                table_placeholder.dataframe(current_df, use_container_width=True)
+                
+                time.sleep(2) # Gap between emails in same company
 
-            # Report Data
-            ok_cnt = sum(1 for r in group_results if "✅" in r)
-            fail_cnt = sum(1 for r in group_results if "❌" in r)
-            
-            report_rows.append({
-                "Company / Website": display_grp_name,
-                "Template Used": curr_tpl['id'],
-                "Total Sent": ok_cnt,
-                "Total Failed": fail_cnt,
-                "Details": ", ".join(group_results)
-            })
-            
             curr_idx += 1
-            prog_bar.progress(curr_idx / total_groups)
+            progress_bar.progress(curr_idx / total_groups)
             time.sleep(random.randint(d_min, d_max))
 
-        st.balloons()
-        st.success("🎉 Campaign Finished!")
-        
-        # --- 5. DOWNLOAD REPORT ---
-        if report_rows:
-            res_df = pd.DataFrame(report_rows)
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                res_df.to_excel(writer, index=False)
-                worksheet = writer.sheets['Sheet1']
-                worksheet.set_column('A:A', 25)
-                worksheet.set_column('E:E', 60)
-            
-            st.download_button("📥 Download Final Report", buffer, "SEO_Report.xlsx")
+        st.success("Campaign Complete!")
 
 # ==========================================
-# 6. INSTRUCTIONS SECTION (NEW)
+# 8. DOWNLOAD BUTTON
 # ==========================================
 st.divider()
-with st.expander("📖 Guide: How to use this tool?", expanded=True):
+if st.session_state.logs:
+    final_df = pd.DataFrame(st.session_state.logs)
+    
+    # Simple Stats
+    total = len(final_df)
+    passed = len(final_df[final_df['Status'].str.contains("Sent")])
+    
+    st.metric("Session Summary", f"{total} Processed", f"{passed} Delivered")
+    
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+        final_df.to_excel(writer, index=False)
+    
+    st.download_button("📥 Download History", buffer, "Campaign_History.xlsx")
+
+# ==========================================
+# 9. USER GUIDE
+# ==========================================
+with st.expander("📖 Guide: How to use?"):
     st.markdown("""
-    <div class="instruction-box">
-    <h3>🚀 Step-by-Step Instructions</h3>
-    <ol>
-        <li><strong>Prepare Excel File:</strong> Ensure your file has these headers: <code>Name</code>, <code>Email</code>, <code>Company</code> (or Website).</li>
-        <li><strong>Configure Email:</strong> In the Sidebar, select your provider (e.g., Hostinger) and enter your Email/Password.</li>
-        <li><strong>Test Connection:</strong> Click the 🔌 <b>Test Connection</b> button in the sidebar to verify your login.</li>
-        <li><strong>Upload Data:</strong> Upload your .xlsx or .csv file in Step 1.</li>
-        <li><strong>Setup Templates:</strong> 
-            <ul>
-                <li>Go to Template 1 tab.</li>
-                <li>Enter Subject Lines (one per line). Use <code>{Name}</code> or <code>{Company}</code> placeholders.</li>
-                <li>Upload your HTML file containing the email body.</li>
-            </ul>
-        </li>
-        <li><strong>Start:</strong> Click <b>Start Campaign</b>. Don't close the tab until finished.</li>
-    </ol>
-    <p><strong>Note:</strong> If you use Gmail, you must use an <b>App Password</b>, not your regular password.</p>
-    </div>
-    """, unsafe_allow_html=True)
+    1. **Global Subject Lines:** Section 2 mai saari subject lines paste karein. System har email k liye inme se koi ek random uthayega.
+    2. **Body Templates:** Section 3 mai Tabs khol kar HTML files upload karein.
+    3. **Multiple Campaigns:** Naye tab mai website khol kar dusri campaign chalayen.
+    4. **Persistence:** Data tab tak save rahega jab tak aap "Clear All History" nahi dabate.
+    """)
