@@ -14,7 +14,7 @@ from email.mime.text import MIMEText
 from email.header import Header
 
 # ==========================================
-# 1. SESSION STATE MANAGEMENT
+# 1. SESSION STATE
 # ==========================================
 if 'logs' not in st.session_state:
     st.session_state.logs = []
@@ -24,7 +24,7 @@ if 'logs' not in st.session_state:
 # ==========================================
 st.set_page_config(page_title="OutreachMaster Pro", page_icon="🚀", layout="wide")
 
-# Custom CSS for Professional Look
+# Professional CSS
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
@@ -36,9 +36,12 @@ st.markdown("""
         padding: 15px; border-radius: 8px; background: white; 
         border-left: 5px solid #007bff; box-shadow: 0 2px 8px rgba(0,0,0,0.05);
     }
-    .success-tag { color: #28a745; font-weight: bold; }
-    .error-tag { color: #dc3545; font-weight: bold; }
-    .instruction-box { background-color: #e9ecef; padding: 15px; border-radius: 8px; font-size: 14px; }
+    .instruction-box { 
+        background-color: #e3f2fd; padding: 20px; border-radius: 10px; 
+        border: 1px solid #bbdefb; color: #0d47a1;
+    }
+    .instruction-box h4 { margin-top: 0; color: #1565c0; }
+    .instruction-box li { margin-bottom: 8px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -65,6 +68,7 @@ def test_connection(conf, user, password):
     except Exception as e:
         return False, f"Connection Failed: {str(e)}"
 
+# Sirf Backend Grouping k liye (Report mai show nahi hoga)
 def get_technical_domain(email):
     try:
         if "@" in email: return email.split('@')[1].lower().strip()
@@ -141,7 +145,36 @@ with st.sidebar:
 # 5. MAIN INTERFACE
 # ==========================================
 st.title("🚀 OutreachMaster Pro")
-st.markdown("Automated Email Outreach with **Randomized Templates** and **Company Grouping**.")
+st.markdown("Automated Email Outreach with **Randomized Templates** and **Strict Grouping**.")
+
+# --- INSTRUCTIONS SECTION (ALWAYS OPEN) ---
+with st.expander("📘 User Guide & Instructions (Read First)", expanded=True):
+    st.markdown("""
+    <div class="instruction-box">
+    <h4>🚀 How to use OutreachMaster?</h4>
+    <ol>
+        <li><strong>Credentials Setup:</strong> Enter your email provider details in the sidebar and click 'Test Connection' to ensure it works.</li>
+        <li><strong>Prepare Recipients:</strong> Upload your Excel/CSV file. 
+            <ul>
+                <li>Required Columns: <code>Email</code></li>
+                <li>Optional Columns: <code>Name</code>, <code>Company</code>, <code>Website</code></li>
+                <li><em>Note: If 'Company' is empty in Excel, it will remain empty in emails/reports.</em></li>
+            </ul>
+        </li>
+        <li><strong>Global Subjects:</strong> Paste multiple subject lines. The system randomly picks one for each email.</li>
+        <li><strong>Templates (Body):</strong>
+            <ul>
+                <li><b>Manual:</b> Upload specific files in Tabs T1-T5.</li>
+                <li><b>Bulk:</b> Select 20+ HTML/TXT files at once.</li>
+                <li>System mixes all templates and picks randomly per email.</li>
+            </ul>
+        </li>
+        <li><strong>Launch:</strong> Click 'Start Campaign' and keep this tab open.</li>
+    </ol>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.divider()
 
 col1, col2 = st.columns([1, 1.2])
 
@@ -163,7 +196,7 @@ with col1:
 # --- RIGHT COLUMN: TEMPLATES ---
 with col2:
     st.subheader("📄 Step 3: Body Templates")
-    st.info("You can use Manual Tabs OR Bulk Upload (or both). System will merge them.")
+    st.info("Upload HTML or TXT files. You can use Bulk Upload for multiple files.")
     
     tab_manual, tab_bulk = st.tabs(["Manual Upload (Single)", "Bulk Upload (Multiple)"])
     
@@ -183,11 +216,10 @@ with col2:
 
     # B. BULK UPLOAD (OPTIONAL)
     with tab_bulk:
-        st.caption("Optional: Select multiple files at once.")
-        bulk_files = st.file_uploader("Upload multiple HTML/TXT files", type=['html', 'txt'], accept_multiple_files=True)
+        st.caption("Select multiple HTML/TXT files at once.")
+        bulk_files = st.file_uploader("Upload multiple files", type=['html', 'txt'], accept_multiple_files=True)
         if bulk_files:
             for bf in bulk_files:
-                # Read content (TXT or HTML)
                 c = io.StringIO(bf.getvalue().decode("utf-8")).read()
                 collected_templates.append({"id": f"Bulk-{bf.name}", "content": c})
             st.success(f"✅ {len(bulk_files)} Bulk Templates Added!")
@@ -196,7 +228,7 @@ with col2:
 # 6. LIVE OPERATIONS DASHBOARD
 # ==========================================
 st.divider()
-st.subheader("📊 Live Operations")
+st.subheader("📊 Campaign Dashboard (Live Operations)")
 
 # Real-time placeholders
 status_box = st.empty()
@@ -236,24 +268,33 @@ if st.button("🚀 START CAMPAIGN"):
             raw_emails = str(row.get('Email', '')).split(',')
             name_val = str(row.get('Name', 'there')).strip()
             
-            # Strict Variable Logic
-            comp = str(row.get('Company', '')).strip()
-            web = str(row.get('Website', '')).strip()
-            if comp.lower() == 'nan': comp = ""
-            if web.lower() == 'nan': web = ""
+            # --- STRICT VARIABLE LOGIC ---
+            # Hum Variable mai wahi dalenge jo Excel mai hai.
+            # Agar Excel khali hai, to Variable Empty String "" rahega.
+            # Koi "your company" ya "your website" fallback nahi lagega display k liye.
             
-            # Display Logic (Fallback to 'your company' if empty)
-            d_comp = comp if comp else (web if web else "your company")
-            d_web = web if web else (comp if comp else "your website")
+            comp_raw = str(row.get('Company', '')).strip()
+            web_raw = str(row.get('Website', '')).strip()
+            
+            if comp_raw.lower() == 'nan': comp_raw = ""
+            if web_raw.lower() == 'nan': web_raw = ""
             
             for em in raw_emails:
                 clean_em = em.strip()
                 if "@" in clean_em:
-                    # Grouping Key
-                    g_key = comp if comp else get_technical_domain(clean_em)
+                    # Grouping Key (Backend Only): 
+                    # Agar Company Name hai to us se group karo, warna Domain se.
+                    # Ye sirf isliye taake same company walon ko gap k sath bheja jaye.
+                    # Ye Key Report mai show nahi hogi.
+                    g_key = comp_raw if comp_raw else get_technical_domain(clean_em)
+                    
                     all_leads.append({
-                        "Group": g_key, "D_Comp": d_comp, "D_Web": d_web,
-                        "Email": clean_em, "Name": name_val, "Row": row
+                        "Group": g_key, 
+                        "D_Comp": comp_raw, # Display Company (Can be empty)
+                        "D_Web": web_raw,   # Display Website (Can be empty)
+                        "Email": clean_em, 
+                        "Name": name_val, 
+                        "Row": row
                     })
 
         grouped_leads = defaultdict(list)
@@ -263,6 +304,9 @@ if st.button("🚀 START CAMPAIGN"):
         sent_counter = 0
         curr_progress = 0
         
+        # Determine starting Sr. No based on existing history
+        start_sr_no = len(st.session_state.logs) + 1
+        
         # --- SENDING LOOP ---
         for group_key, contacts in grouped_leads.items():
             if sent_counter >= daily_limit:
@@ -271,11 +315,12 @@ if st.button("🚀 START CAMPAIGN"):
             # Pick Random Template for this Company Group
             curr_tpl = random.choice(collected_templates)
             
-            # UI Update
-            display_name = contacts[0]['D_Comp'] if contacts[0]['D_Comp'] != "your company" else group_key
+            # UI Status Update (Use Group Key if Display Company is empty, just for UI label)
+            ui_label = contacts[0]['D_Comp'] if contacts[0]['D_Comp'] else group_key
+            
             status_box.markdown(f"""
                 <div class="live-card">
-                    <h4>🔄 Processing: {display_name}</h4>
+                    <h4>🔄 Processing: {ui_label}</h4>
                     <span><b>Emails:</b> {len(contacts)}</span> | 
                     <span><b>Template:</b> {curr_tpl['id']}</span>
                 </div>
@@ -286,6 +331,10 @@ if st.button("🚀 START CAMPAIGN"):
                 curr_subj = random.choice(subject_pool)
                 
                 # Replace Variables
+                # Agar D_Comp khali hai, to wo khali hi replace hoga.
+                # Agar user ne subject mai {Company} likha hai aur excel mai khali hai,
+                # to wo sirf blank space ban jayega.
+                
                 sub = curr_subj.replace("{Name}", person['Name']).replace("{Company}", person['D_Comp']).replace("{Website}", person['D_Web'])
                 bod = curr_tpl['content'].replace("{Name}", person['Name']).replace("{Company}", person['D_Comp']).replace("{Website}", person['D_Web'])
                 
@@ -303,10 +352,14 @@ if st.button("🚀 START CAMPAIGN"):
                     save_sent_folder(conf, email_user, email_pass, response_msg)
                     sent_counter += 1
                 
+                # Current Time (12 Hour Format)
+                now_time = datetime.now().strftime("%I:%M:%S %p")
+                
                 # Update Logs
                 log_entry = {
-                    "Time": datetime.now().strftime("%H:%M:%S"),
-                    "Company": display_name,
+                    "Sr. No": start_sr_no,
+                    "Time": now_time,
+                    "Company": person['D_Comp'], # Will be empty if Excel is empty
                     "Email": person['Email'],
                     "Status": status_txt,
                     "Template": curr_tpl['id'],
@@ -314,6 +367,7 @@ if st.button("🚀 START CAMPAIGN"):
                     "Error Info": response_msg if not success else ""
                 }
                 st.session_state.logs.append(log_entry)
+                start_sr_no += 1
                 
                 # Refresh Table
                 log_table.dataframe(pd.DataFrame(st.session_state.logs), use_container_width=True)
@@ -347,27 +401,3 @@ if st.session_state.logs:
         final_df.to_excel(writer, index=False)
     
     st.download_button("📥 Download Final Report", buffer, "Campaign_Report.xlsx", type="primary")
-
-# ==========================================
-# 9. USER GUIDE (INSTRUCTIONS)
-# ==========================================
-with st.expander("📘 User Guide & Documentation", expanded=False):
-    st.markdown("""
-    <div class="instruction-box">
-    <h4>Getting Started</h4>
-    <ol>
-        <li><strong>Credentials:</strong> Enter your email provider details in the sidebar and click 'Test Connection'.</li>
-        <li><strong>Upload Recipients:</strong> Upload your Excel/CSV file. Ensure columns <code>Name</code> and <code>Email</code> exist.</li>
-        <li><strong>Subject Lines:</strong> Paste multiple subject lines in the 'Global Subject List'. The system will pick randomly for each email.</li>
-        <li><strong>Templates:</strong>
-            <ul>
-                <li><b>Manual:</b> Upload specific files in Tabs T1-T5.</li>
-                <li><b>Bulk (Optional):</b> Use the 'Bulk Upload' tab to select 10, 20, or more <code>.html</code>/<code>.txt</code> files at once.</li>
-                <li>The system will combine all uploaded templates and pick randomly.</li>
-            </ul>
-        </li>
-        <li><strong>Run:</strong> Click Start. Do not close the browser tab until the process finishes.</li>
-    </ol>
-    <p><strong>Note:</strong> You can open this tool in multiple browser tabs to run parallel campaigns.</p>
-    </div>
-    """, unsafe_allow_html=True)
