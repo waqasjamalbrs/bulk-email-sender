@@ -18,6 +18,8 @@ from email.header import Header
 # ==========================================
 if 'logs' not in st.session_state:
     st.session_state.logs = []
+if 'detected_folder' not in st.session_state:
+    st.session_state.detected_folder = None
 
 # ==========================================
 # 2. PAGE CONFIGURATION
@@ -43,10 +45,6 @@ st.markdown("""
         padding: 10px; background-color: #d4edda; color: #155724; 
         border-radius: 5px; border: 1px solid #c3e6cb; margin-bottom: 10px;
     }
-    .status-warning {
-        padding: 10px; background-color: #fff3cd; color: #856404; 
-        border-radius: 5px; border: 1px solid #ffeeba; margin-bottom: 10px;
-    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -60,11 +58,25 @@ PROVIDERS = {
     "Custom": {"smtp": "", "port": 465, "imap": "", "i_port": 993}
 }
 
-# --- NEW: Advanced Connection Tester ---
-def test_connection_and_find_folder(conf, user, password):
+def get_folder_priority_list(provider_name):
+    """Returns folder list optimized for the selected provider"""
+    defaults = ['Sent', 'Sent Items', 'INBOX.Sent', 'INBOX/Sent', '[Gmail]/Sent Mail']
+    
+    if provider_name == "Hostinger":
+        # Hostinger prefers INBOX.Sent
+        return ['INBOX.Sent', 'Sent', 'Sent Items', 'INBOX/Sent']
+    elif provider_name == "Gmail":
+        return ['[Gmail]/Sent Mail', 'Sent', 'Sent Items']
+    elif provider_name == "Outlook":
+        return ['Sent Items', 'Sent', 'INBOX.Sent']
+    else:
+        return defaults
+
+# --- CONNECTION TESTER & FOLDER DETECTOR ---
+def test_connection_and_find_folder(conf, user, password, provider_name):
     results = {"smtp": False, "imap": False, "folder": None, "msg": ""}
     
-    # 1. Test SMTP (Sending capability)
+    # 1. Test SMTP
     try:
         if conf['port'] == 465:
             server = smtplib.SMTP_SSL(conf['smtp'], conf['port'])
@@ -78,14 +90,15 @@ def test_connection_and_find_folder(conf, user, password):
         results["msg"] = f"SMTP Error: {str(e)}"
         return results
 
-    # 2. Test IMAP (Saving capability & Folder Detection)
+    # 2. Test IMAP & Detect Folder
     try:
         mail = imaplib.IMAP4_SSL(conf['imap'], conf['i_port'])
         mail.login(user, password)
         results["imap"] = True
         
-        # Detect Sent Folder
-        possible_folders = ['Sent', 'Sent Items', '[Gmail]/Sent Mail', 'INBOX.Sent', 'INBOX/Sent']
+        # Get optimized list based on provider
+        possible_folders = get_folder_priority_list(provider_name)
+        
         for folder in possible_folders:
             try:
                 status, _ = mail.select(folder)
@@ -127,18 +140,35 @@ def send_email_smtp(conf, user, password, to_email, to_name, sender_name, subjec
     except Exception as e:
         return False, str(e), None
 
-def save_sent_folder(conf, user, password, raw_msg, folder_name=None):
+def save_sent_folder(conf, user, password, raw_msg, provider_name, specific_folder=None):
     if not raw_msg: return False
     try:
         mail = imaplib.IMAP4_SSL(conf['imap'], conf['i_port'])
         mail.login(user, password)
         
-        target_folder = folder_name if folder_name else 'Sent'
+        saved = False
         
-        # Try appending
-        mail.append(target_folder, '\\Seen', imaplib.Time2Internaldate(time.time()), raw_msg.encode('utf-8'))
+        # 1. Try the specifically detected folder first
+        if specific_folder:
+            try:
+                mail.append(specific_folder, '\\Seen', imaplib.Time2Internaldate(time.time()), raw_msg.encode('utf-8'))
+                mail.logout()
+                return True
+            except:
+                pass # If failed, fall back to list logic
+        
+        # 2. Fallback: Try priority list
+        folders_to_try = get_folder_priority_list(provider_name)
+        for folder in folders_to_try:
+            try:
+                mail.append(folder, '\\Seen', imaplib.Time2Internaldate(time.time()), raw_msg.encode('utf-8'))
+                saved = True
+                break
+            except:
+                continue
+        
         mail.logout()
-        return True
+        return saved
     except: 
         return False
 
@@ -160,28 +190,29 @@ with st.sidebar:
     email_pass = st.text_input("Password / App Password", type="password")
     sender_display = st.text_input("Sender Name (Display)", "Joseph Miller")
     
-    # --- UPDATED TEST BUTTON ---
+    # --- TEST CONNECTION ---
     if st.button("🔌 Test Connection"):
         if email_user and email_pass:
-            with st.spinner("Checking SMTP & IMAP Folders..."):
-                res = test_connection_and_find_folder(conf, email_user, email_pass)
+            with st.spinner("Authenticating & Finding Sent Folder..."):
+                # Pass provider name to optimize search
+                res = test_connection_and_find_folder(conf, email_user, email_pass, p_choice)
                 
                 if res["smtp"]:
-                    # Save detected folder to session state so we use it later
+                    # Store detected folder in session
                     st.session_state.detected_folder = res["folder"]
                     
                     st.markdown(f"""
                     <div class="status-success">
-                        <b>✅ Connection Successful!</b><br>
-                        SMTP (Sending): Working<br>
-                        IMAP (Saving): Working
+                        <b>✅ Connected Successfully!</b><br>
+                        Sending (SMTP): Working<br>
+                        Saving (IMAP): Working
                     </div>
                     """, unsafe_allow_html=True)
                     
                     if res["folder"]:
-                        st.info(f"📂 Detected Sent Folder: **{res['folder']}**")
+                        st.info(f"📂 Sent Folder Detected: **{res['folder']}**")
                     else:
-                        st.warning("⚠️ Connected, but could not detect 'Sent' folder automatically. Emails will send but might not save.")
+                        st.warning("⚠️ Connected, but 'Sent' folder not found. Emails will send but not save.")
                 else:
                     st.error(f"❌ Connection Failed. {res['msg']}")
         else:
@@ -283,8 +314,8 @@ if st.button("🚀 START CAMPAIGN"):
         # Prepare Subject List
         subject_pool = [s.strip() for s in subjects_input.split('\n') if s.strip()]
         
-        # Use detected folder if available, else try auto-detect during loop
-        target_sent_folder = st.session_state.get('detected_folder', None)
+        # Get detected folder from session (set during Test Connection)
+        target_folder = st.session_state.get('detected_folder', None)
         
         # --- READ DATA ---
         try:
@@ -327,8 +358,6 @@ if st.button("🚀 START CAMPAIGN"):
         total_groups = len(grouped_leads)
         sent_counter = 0
         curr_progress = 0
-        
-        # Start Sr. No based on history
         start_sr_no = len(st.session_state.logs) + 1
         
         # --- SENDING LOOP ---
@@ -369,24 +398,16 @@ if st.button("🚀 START CAMPAIGN"):
                 
                 status_txt = "✅ Sent" if success else "❌ Failed"
                 
-                # Save to Sent Folder Logic (Uses detected folder if available)
+                # Save to Sent Folder Logic
                 if success and raw_data:
-                    # If we already detected the folder during 'Test Connection', use that.
-                    # Otherwise, try to auto-detect now (which happens inside save_sent_folder if folder_name is None, but let's be explicit).
-                    # Actually, my helper function 'save_sent_folder' used to auto-detect. 
-                    # Let's pass the detected folder if we have it to speed things up.
+                    # Pass provider choice AND detected folder
+                    is_saved = save_sent_folder(conf, email_user, email_pass, raw_data, p_choice, specific_folder=target_folder)
                     
-                    is_saved = save_sent_folder(conf, email_user, email_pass, raw_data, folder_name=target_sent_folder)
-                    
-                    # If failed with target folder, try fallback auto-detect (pass None)
-                    if not is_saved and target_sent_folder:
-                         is_saved = save_sent_folder(conf, email_user, email_pass, raw_data, folder_name=None)
-
                     if not is_saved:
                         status_txt += " (Not Saved)"
                     sent_counter += 1
                 
-                # Current Time (12 Hour Format)
+                # Current Time
                 now_time = datetime.now().strftime("%I:%M:%S %p")
                 
                 # Update Logs
@@ -437,7 +458,7 @@ if st.session_state.logs:
     st.download_button("📥 Download Final Report", buffer, "Campaign_Report.xlsx", type="primary")
 
 # ==========================================
-# 9. USER GUIDE & INSTRUCTIONS (BOTTOM)
+# 9. USER GUIDE (BOTTOM)
 # ==========================================
 st.divider()
 with st.expander("📘 User Guide & Instructions (Read First)", expanded=True):
@@ -445,31 +466,24 @@ with st.expander("📘 User Guide & Instructions (Read First)", expanded=True):
     <div class="instruction-box">
     <h4>🚀 How to use OutreachMaster?</h4>
     <ol>
-        <li><strong>Credentials Setup:</strong> Enter your email provider details in the sidebar and click 'Test Connection' to ensure it works.</li>
+        <li><strong>Credentials Setup:</strong> Select Provider (e.g. Hostinger), enter Email/Pass, and click <b>'Test Connection'</b>.
+            <ul><li>The system will tell you if Login worked AND which <b>Sent Folder</b> (e.g., INBOX.Sent) it detected.</li></ul>
+        </li>
         <li><strong>Prepare Recipients:</strong> Upload your Excel/CSV file. 
             <ul>
                 <li>Required Column: <code>Email</code></li>
                 <li>Optional Columns: <code>Name</code>, <code>Company</code>, <code>Website</code></li>
             </ul>
         </li>
-        <li><strong>Using Dynamic Tags (Variables):</strong>
+        <li><strong>Using Dynamic Tags:</strong>
             <ul>
-                <li>You can use <code>{Name}</code>, <code>{Company}</code>, and <code>{Website}</code> in both <b>Subject Lines</b> and <b>Email Body</b>.</li>
-                <li>Example Subject: <em>"Question regarding {Company}"</em></li>
-                <li>Example Body: <em>"Hi {Name}, I visited {Website}..."</em></li>
-                <li>System will automatically fill these with Excel data.</li>
+                <li>Use <code>{Name}</code>, <code>{Company}</code>, <code>{Website}</code> in Subject/Body.</li>
+                <li>Example Subject: <em>"Question for {Company}"</em></li>
             </ul>
         </li>
-        <li><strong>Global Subjects:</strong> Paste multiple subject lines (One per line). System picks randomly.</li>
-        <li><strong>Templates (Body):</strong>
-            <ul>
-                <li><b>Manual:</b> Upload specific files in Tabs T1-T5.</li>
-                <li><b>Bulk:</b> Select 20+ HTML/TXT files at once.</li>
-                <li>System mixes all templates and picks randomly per email.</li>
-            </ul>
-        </li>
-        <li><strong>Sent Folder Issue:</strong> Click 'Test Connection' before starting. The system will auto-detect your specific Sent folder (e.g., 'Sent Items') and ensure emails are saved there.</li>
-        <li><strong>Launch:</strong> Click 'Start Campaign' and keep this tab open.</li>
+        <li><strong>Global Subjects:</strong> Paste multiple subject lines. System picks randomly.</li>
+        <li><strong>Templates:</strong> Upload HTML/TXT files via Manual or Bulk tabs.</li>
+        <li><strong>Launch:</strong> Click 'Start Campaign'.</li>
     </ol>
     </div>
     """, unsafe_allow_html=True)
