@@ -24,7 +24,6 @@ if 'logs' not in st.session_state:
 # ==========================================
 st.set_page_config(page_title="OutreachMaster Pro", page_icon="🚀", layout="wide")
 
-# Professional CSS
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
@@ -68,7 +67,6 @@ def test_connection(conf, user, password):
     except Exception as e:
         return False, f"Connection Failed: {str(e)}"
 
-# Sirf Backend Grouping k liye (Report mai show nahi hoga)
 def get_technical_domain(email):
     try:
         if "@" in email: return email.split('@')[1].lower().strip()
@@ -142,38 +140,10 @@ with st.sidebar:
         st.rerun()
 
 # ==========================================
-# 5. MAIN INTERFACE
+# 5. MAIN INTERFACE (TOP)
 # ==========================================
 st.title("🚀 OutreachMaster Pro")
 st.markdown("Automated Email Outreach with **Randomized Templates** and **Strict Grouping**.")
-
-# --- INSTRUCTIONS SECTION (ALWAYS OPEN) ---
-with st.expander("📘 User Guide & Instructions (Read First)", expanded=True):
-    st.markdown("""
-    <div class="instruction-box">
-    <h4>🚀 How to use OutreachMaster?</h4>
-    <ol>
-        <li><strong>Credentials Setup:</strong> Enter your email provider details in the sidebar and click 'Test Connection' to ensure it works.</li>
-        <li><strong>Prepare Recipients:</strong> Upload your Excel/CSV file. 
-            <ul>
-                <li>Required Columns: <code>Email</code></li>
-                <li>Optional Columns: <code>Name</code>, <code>Company</code>, <code>Website</code></li>
-                <li><em>Note: If 'Company' is empty in Excel, it will remain empty in emails/reports.</em></li>
-            </ul>
-        </li>
-        <li><strong>Global Subjects:</strong> Paste multiple subject lines. The system randomly picks one for each email.</li>
-        <li><strong>Templates (Body):</strong>
-            <ul>
-                <li><b>Manual:</b> Upload specific files in Tabs T1-T5.</li>
-                <li><b>Bulk:</b> Select 20+ HTML/TXT files at once.</li>
-                <li>System mixes all templates and picks randomly per email.</li>
-            </ul>
-        </li>
-        <li><strong>Launch:</strong> Click 'Start Campaign' and keep this tab open.</li>
-    </ol>
-    </div>
-    """, unsafe_allow_html=True)
-
 st.divider()
 
 col1, col2 = st.columns([1, 1.2])
@@ -269,10 +239,6 @@ if st.button("🚀 START CAMPAIGN"):
             name_val = str(row.get('Name', 'there')).strip()
             
             # --- STRICT VARIABLE LOGIC ---
-            # Hum Variable mai wahi dalenge jo Excel mai hai.
-            # Agar Excel khali hai, to Variable Empty String "" rahega.
-            # Koi "your company" ya "your website" fallback nahi lagega display k liye.
-            
             comp_raw = str(row.get('Company', '')).strip()
             web_raw = str(row.get('Website', '')).strip()
             
@@ -282,16 +248,13 @@ if st.button("🚀 START CAMPAIGN"):
             for em in raw_emails:
                 clean_em = em.strip()
                 if "@" in clean_em:
-                    # Grouping Key (Backend Only): 
-                    # Agar Company Name hai to us se group karo, warna Domain se.
-                    # Ye sirf isliye taake same company walon ko gap k sath bheja jaye.
-                    # Ye Key Report mai show nahi hogi.
+                    # Grouping Key (Backend Only)
                     g_key = comp_raw if comp_raw else get_technical_domain(clean_em)
                     
                     all_leads.append({
                         "Group": g_key, 
-                        "D_Comp": comp_raw, # Display Company (Can be empty)
-                        "D_Web": web_raw,   # Display Website (Can be empty)
+                        "D_Comp": comp_raw,
+                        "D_Web": web_raw,
                         "Email": clean_em, 
                         "Name": name_val, 
                         "Row": row
@@ -304,7 +267,7 @@ if st.button("🚀 START CAMPAIGN"):
         sent_counter = 0
         curr_progress = 0
         
-        # Determine starting Sr. No based on existing history
+        # Start Sr. No based on history
         start_sr_no = len(st.session_state.logs) + 1
         
         # --- SENDING LOOP ---
@@ -315,7 +278,7 @@ if st.button("🚀 START CAMPAIGN"):
             # Pick Random Template for this Company Group
             curr_tpl = random.choice(collected_templates)
             
-            # UI Status Update (Use Group Key if Display Company is empty, just for UI label)
+            # UI Status Update
             ui_label = contacts[0]['D_Comp'] if contacts[0]['D_Comp'] else group_key
             
             status_box.markdown(f"""
@@ -331,10 +294,6 @@ if st.button("🚀 START CAMPAIGN"):
                 curr_subj = random.choice(subject_pool)
                 
                 # Replace Variables
-                # Agar D_Comp khali hai, to wo khali hi replace hoga.
-                # Agar user ne subject mai {Company} likha hai aur excel mai khali hai,
-                # to wo sirf blank space ban jayega.
-                
                 sub = curr_subj.replace("{Name}", person['Name']).replace("{Company}", person['D_Comp']).replace("{Website}", person['D_Web'])
                 bod = curr_tpl['content'].replace("{Name}", person['Name']).replace("{Company}", person['D_Comp']).replace("{Website}", person['D_Web'])
                 
@@ -359,7 +318,7 @@ if st.button("🚀 START CAMPAIGN"):
                 log_entry = {
                     "Sr. No": start_sr_no,
                     "Time": now_time,
-                    "Company": person['D_Comp'], # Will be empty if Excel is empty
+                    "Company": person['D_Comp'], # Empty if Excel is empty
                     "Email": person['Email'],
                     "Status": status_txt,
                     "Template": curr_tpl['id'],
@@ -401,3 +360,33 @@ if st.session_state.logs:
         final_df.to_excel(writer, index=False)
     
     st.download_button("📥 Download Final Report", buffer, "Campaign_Report.xlsx", type="primary")
+
+# ==========================================
+# 9. USER GUIDE & INSTRUCTIONS (BOTTOM)
+# ==========================================
+st.divider()
+with st.expander("📘 User Guide & Instructions (Read First)", expanded=True):
+    st.markdown("""
+    <div class="instruction-box">
+    <h4>🚀 How to use OutreachMaster?</h4>
+    <ol>
+        <li><strong>Credentials Setup:</strong> Enter your email provider details in the sidebar and click 'Test Connection' to ensure it works.</li>
+        <li><strong>Prepare Recipients:</strong> Upload your Excel/CSV file. 
+            <ul>
+                <li>Required Columns: <code>Email</code></li>
+                <li>Optional Columns: <code>Name</code>, <code>Company</code>, <code>Website</code></li>
+                <li><em>Note: If 'Company' is empty in Excel, it will remain empty in emails/reports.</em></li>
+            </ul>
+        </li>
+        <li><strong>Global Subjects:</strong> Paste multiple subject lines. The system randomly picks one for each email.</li>
+        <li><strong>Templates (Body):</strong>
+            <ul>
+                <li><b>Manual:</b> Upload specific files in Tabs T1-T5.</li>
+                <li><b>Bulk:</b> Select 20+ HTML/TXT files at once.</li>
+                <li>System mixes all templates and picks randomly per email.</li>
+            </ul>
+        </li>
+        <li><strong>Launch:</strong> Click 'Start Campaign' and keep this tab open.</li>
+    </ol>
+    </div>
+    """, unsafe_allow_html=True)
