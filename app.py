@@ -318,7 +318,7 @@ if st.button("🚀 START CAMPAIGN"):
                 log_entry = {
                     "Sr. No": start_sr_no,
                     "Time": now_time,
-                    "Company": person['D_Comp'], # Empty if Excel is empty
+                    "Company": person['D_Comp'], 
                     "Email": person['Email'],
                     "Status": status_txt,
                     "Template": curr_tpl['id'],
@@ -370,15 +370,22 @@ with st.expander("📘 User Guide & Instructions (Read First)", expanded=True):
     <div class="instruction-box">
     <h4>🚀 How to use OutreachMaster?</h4>
     <ol>
-        <li><strong>Credentials Setup:</strong> Enter your email provider details in the sidebar and click 'Test Connection' to ensure it works.</li>
+        <li><strong>Credentials Setup:</strong> Enter your email provider details in the sidebar and click 'Test Connection'.</li>
         <li><strong>Prepare Recipients:</strong> Upload your Excel/CSV file. 
             <ul>
-                <li>Required Columns: <code>Email</code></li>
+                <li>Required Column: <code>Email</code></li>
                 <li>Optional Columns: <code>Name</code>, <code>Company</code>, <code>Website</code></li>
-                <li><em>Note: If 'Company' is empty in Excel, it will remain empty in emails/reports.</em></li>
             </ul>
         </li>
-        <li><strong>Global Subjects:</strong> Paste multiple subject lines. The system randomly picks one for each email.</li>
+        <li><strong>Using Dynamic Tags (Variables):</strong>
+            <ul>
+                <li>You can use <code>{Name}</code>, <code>{Company}</code>, and <code>{Website}</code> in both <b>Subject Lines</b> and <b>Email Body</b>.</li>
+                <li>Example Subject: <em>"Question regarding {Company}"</em></li>
+                <li>Example Body: <em>"Hi {Name}, I visited {Website}..."</em></li>
+                <li>System will automatically fill these with Excel data.</li>
+            </ul>
+        </li>
+        <li><strong>Global Subjects:</strong> Paste multiple subject lines (One per line). System picks randomly.</li>
         <li><strong>Templates (Body):</strong>
             <ul>
                 <li><b>Manual:</b> Upload specific files in Tabs T1-T5.</li>
