@@ -14,21 +14,21 @@ from email.mime.text import MIMEText
 from email.header import Header
 
 # ==========================================
-# 1. PAGE CONFIGURATION
+# 1. PAGE SETUP
 # ==========================================
-st.set_page_config(page_title="Pro SEO Outreach", page_icon="🚀", layout="wide")
+st.set_page_config(page_title="SEO Outreach Pro", page_icon="📨", layout="wide")
 st.markdown("""
     <style>
-    /* UI Polish */
     .main { background-color: #f7f9fc; }
     .stButton>button { 
         background: linear-gradient(90deg, #1d976c, #93f9b9); 
         color: #004d2e; border: none; height: 50px; font-size: 18px; font-weight: bold;
-        border-radius: 8px;
+        border-radius: 8px; width: 100%;
     }
-    .stTextInput>div>div>input { border-radius: 5px; }
-    /* Success/Error Boxes */
-    .report-box { padding: 10px; border-radius: 5px; margin-bottom: 5px; color: #155724; background-color: #d4edda; border-color: #c3e6cb; }
+    .uploaded-file-box { border: 2px dashed #4CAF50; padding: 10px; border-radius: 5px; background-color: #e8f5e9; }
+    .instruction-box { background-color: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 5px solid #2196f3; }
+    .success-box { padding: 10px; background-color: #d4edda; color: #155724; border-radius: 5px; }
+    .error-box { padding: 10px; background-color: #f8d7da; color: #721c24; border-radius: 5px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -42,7 +42,20 @@ PROVIDERS = {
     "Custom": {"smtp": "", "port": 465, "imap": "", "i_port": 993}
 }
 
-# Technical domain extractor (Sirf backend grouping k liye)
+def test_smtp_connection(conf, user, password):
+    """Test login credentials without sending email"""
+    try:
+        if conf['port'] == 465:
+            server = smtplib.SMTP_SSL(conf['smtp'], conf['port'])
+        else:
+            server = smtplib.SMTP(conf['smtp'], conf['port'])
+            server.starttls()
+        server.login(user, password)
+        server.quit()
+        return True, "Connection Successful! ✅"
+    except Exception as e:
+        return False, str(e)
+
 def get_technical_domain(email):
     try:
         if "@" in email:
@@ -99,6 +112,18 @@ with st.sidebar:
     e_pass = st.text_input("Password / App Password", type="password")
     sender_name = st.text_input("Sender Name (Display)", "Joseph Miller")
     
+    # --- TEST CONNECTION BUTTON ---
+    if st.button("🔌 Test Connection"):
+        if e_user and e_pass:
+            with st.spinner("Testing login..."):
+                ok, msg = test_smtp_connection(conf, e_user, e_pass)
+                if ok:
+                    st.success(msg)
+                else:
+                    st.error(f"Failed: {msg}")
+        else:
+            st.warning("Enter Email & Password first.")
+    
     st.divider()
     st.subheader("3. Safety Limits")
     limit = st.number_input("Stop after sending X emails", 50, 5000, 100)
@@ -109,20 +134,31 @@ with st.sidebar:
 # 4. MAIN INTERFACE
 # ==========================================
 st.title("📨 Ultimate SEO Outreach Tool")
-st.markdown("Supports: **Multi-Subject Rotation**, **Company Grouping**, & **Strict Variables**.")
+st.markdown("Supports: **HTML File Upload**, **Company Grouping**, & **Strict Variables**.")
 
 col1, col2 = st.columns([1, 2])
 
-# --- LEFT COLUMN: FILE ---
+# --- LEFT COLUMN: DATA UPLOAD ---
 with col1:
-    st.subheader("📂 Step 1: Upload Data")
-    f = st.file_uploader("Upload Excel (.xlsx) or CSV", type=['xlsx', 'csv'])
-    st.info("Required Columns: `Name`, `Email`. \n\nRecommended: `Company` or `Website`.")
+    st.subheader("📂 Step 1: Upload Recipients Data")
+    f = st.file_uploader("Upload Excel/CSV File", type=['xlsx', 'csv'])
+    
+    if f:
+        st.success("File Uploaded Successfully!")
+        try:
+            if f.name.endswith('.csv'): 
+                preview_df = pd.read_csv(f)
+            else: 
+                preview_df = pd.read_excel(f)
+            st.dataframe(preview_df.head(3), hide_index=True)
+            st.caption(f"Total Rows Found: {len(preview_df)}")
+        except:
+            pass
 
 # --- RIGHT COLUMN: TEMPLATES ---
 with col2:
     st.subheader("📝 Step 2: Templates Strategy")
-    st.caption("Add different templates. The system will rotate them per company.")
+    st.caption("Upload HTML files for body. System will rotate templates per company.")
     
     tabs = st.tabs(["Template 1", "Template 2", "Template 3", "Template 4", "Template 5"])
     tpls = []
@@ -131,27 +167,32 @@ with col2:
         with tab:
             st.markdown(f"**Template {i+1} Setup**")
             
-            # Subject Input
+            # Subject Input (Manual)
             raw_s = st.text_area(
-                f"Subject Lines (One per line) - Randomly picked", 
+                f"Subject Lines for T{i+1} (One per line)", 
                 height=100, 
                 key=f"s_{i}",
-                placeholder="Collaboration opportunity for {Website}\nQuick question regarding {Company}\nFeature inquiry for {Name}"
+                placeholder="Collaboration for {Website}\nQuick question regarding {Company}"
             )
             
-            # Body Input
-            raw_b = st.text_area(
-                f"Email Body (HTML Supported)", 
-                height=200, 
-                key=f"b_{i}",
-                placeholder="<p>Hi {Name},</p>\n<p>I saw your work at {Company}...</p>"
-            )
+            # Body Input (FILE UPLOAD)
+            st.markdown("**Email Body HTML:**")
+            body_file = st.file_uploader(f"Upload .txt or .html for Template {i+1}", type=['html', 'txt'], key=f"f_{i}")
             
+            final_body_content = ""
+            
+            # Read uploaded file content
+            if body_file is not None:
+                stringio = io.StringIO(body_file.getvalue().decode("utf-8"))
+                final_body_content = stringio.read()
+                st.markdown(f"<div class='uploaded-file-box'>✅ Loaded: {len(final_body_content)} characters</div>", unsafe_allow_html=True)
+                with st.expander("👁️ Preview HTML Content"):
+                    st.code(final_body_content, language='html')
+
             # Store Valid Templates
-            if raw_s and raw_b:
-                # Split subjects by new line
+            if raw_s and final_body_content:
                 s_list = [x.strip() for x in raw_s.split('\n') if x.strip()]
-                tpls.append({"id": f"Template {i+1}", "subjects": s_list, "body": raw_b})
+                tpls.append({"id": f"Template {i+1}", "subjects": s_list, "body": final_body_content})
 
 # ==========================================
 # 5. LOGIC & EXECUTION
@@ -161,51 +202,46 @@ st.divider()
 if st.button("🚀 START CAMPAIGN"):
     # --- VALIDATION ---
     if not f:
-        st.error("❌ Please upload a file first.")
+        st.error("❌ Please upload the Recipients Data file first.")
     elif not e_user or not e_pass:
-        st.error("❌ Please enter your Email and Password in Sidebar.")
+        st.error("❌ Please enter Email and Password in Sidebar.")
     elif not tpls:
-        st.error("❌ Please add at least one Template (Subject + Body).")
+        st.error("❌ Please upload at least one Template Body file and add Subject lines.")
     else:
         # --- 1. READ FILE ---
         try:
             if f.name.endswith('.csv'): df = pd.read_csv(f)
             else: df = pd.read_excel(f)
         except Exception as e:
-            st.error(f"Error reading file: {e}")
+            st.error(f"Error reading recipients file: {e}")
             st.stop()
             
-        # --- 2. PRE-PROCESS DATA (Strict Logic) ---
+        # --- 2. PRE-PROCESS DATA ---
         all_contacts = []
         
         for _, row in df.iterrows():
-            # Handle multiple emails (comma separated)
+            # Handle multiple emails
             raw_emails = str(row.get('Email', '')).split(',')
             
-            # Basic Variables
+            # Variables
             name_val = str(row.get('Name', 'there')).strip()
             
-            # Strict Company/Website Logic
+            # Fetch Company/Website Columns
             company_col = str(row.get('Company', '')).strip()
             website_col = str(row.get('Website', '')).strip()
             
-            # Clean up Pandas 'nan'
+            # Clean 'nan'
             if company_col.lower() == 'nan': company_col = ""
             if website_col.lower() == 'nan': website_col = ""
             
-            # DETERMINE DISPLAY TEXT (For {Company} / {Website})
-            # Agar Column khali hai to 'your company' use hoga.
-            # Gmail/Hotmail domain kabhi use nahi hoga.
-            
+            # Display Logic
             final_comp_txt = company_col if company_col else (website_col if website_col else "your company")
             final_web_txt = website_col if website_col else (company_col if company_col else "your website")
             
             for em in raw_emails:
                 clean_em = em.strip()
                 if "@" in clean_em:
-                    # GROUPING KEY LOGIC
-                    # Group karne k liye hum Domain use kar sakte hain agar company name na ho.
-                    # Ye sirf "Batching" k liye hai, text k liye nahi.
+                    # Grouping Logic
                     tech_domain = get_technical_domain(clean_em)
                     group_key = company_col if company_col else tech_domain
                     
@@ -223,7 +259,7 @@ if st.button("🚀 START CAMPAIGN"):
         for c in all_contacts:
             grouped_data[c['GroupKey']].append(c)
         
-        st.success(f"✅ Loaded {len(all_contacts)} emails. Grouped into {len(grouped_data)} unique Companies/Websites.")
+        st.success(f"✅ Loaded {len(all_contacts)} emails. Grouped into {len(grouped_data)} unique Companies.")
         
         # --- 4. SENDING LOOP ---
         prog_bar = st.progress(0)
@@ -235,43 +271,37 @@ if st.button("🚀 START CAMPAIGN"):
         curr_idx = 0
         total_groups = len(grouped_data)
         
-        # Loop through Companies
         for g_key, contacts in grouped_data.items():
             if sent_total >= limit: 
-                st.warning("🛑 Daily Limit Reached! Stopping process."); break
+                st.warning("🛑 Daily Limit Reached!"); break
             
-            # Pick Template for this Company
             curr_tpl = next(cycle)
             group_results = []
             
-            # UI Status Update
-            # Show Company Name if available, else show Domain
             display_grp_name = contacts[0]['DisplayComp'] if contacts[0]['DisplayComp'] != "your company" else g_key
             status_text.markdown(f"**Processing:** `{display_grp_name}` | using {curr_tpl['id']}")
             
-            # Loop through People in this Company
             for person in contacts:
                 email = person['Email']
                 name = person['Name']
                 
-                # Pick Random Subject
+                # Random Subject
                 if curr_tpl['subjects']: 
                     subj_base = random.choice(curr_tpl['subjects'])
                 else: 
-                    subj_base = "Hello" # Fallback
+                    subj_base = "Hello"
                 
-                # --- PERSONALIZATION ---
-                # 1. Standard Tags
+                # Personalization
                 sub = subj_base.replace("{Name}", name).replace("{Company}", person['DisplayComp']).replace("{Website}", person['DisplayWeb'])
                 bod = curr_tpl['body'].replace("{Name}", name).replace("{Company}", person['DisplayComp']).replace("{Website}", person['DisplayWeb'])
                 
-                # 2. Extra Columns from Excel
+                # Extra Columns
                 for col in df.columns:
                      val = str(person['RowData'].get(col, ''))
                      sub = sub.replace(f"{{{col}}}", val)
                      bod = bod.replace(f"{{{col}}}", val)
                 
-                # --- SENDING ---
+                # Send
                 ok, msg = send_email_smtp(conf, e_user, e_pass, email, name, sender_name, sub, bod)
                 
                 if ok:
@@ -281,10 +311,9 @@ if st.button("🚀 START CAMPAIGN"):
                 else:
                     group_results.append(f"❌ {email} ({msg})")
                 
-                # Small delay between colleagues (2 sec)
                 time.sleep(2) 
 
-            # Record Results
+            # Report Data
             ok_cnt = sum(1 for r in group_results if "✅" in r)
             fail_cnt = sum(1 for r in group_results if "❌" in r)
             
@@ -293,36 +322,50 @@ if st.button("🚀 START CAMPAIGN"):
                 "Template Used": curr_tpl['id'],
                 "Total Sent": ok_cnt,
                 "Total Failed": fail_cnt,
-                "Email Details": ", ".join(group_results)
+                "Details": ", ".join(group_results)
             })
             
-            # Update Progress
             curr_idx += 1
             prog_bar.progress(curr_idx / total_groups)
-            
-            # Big Random Delay between Companies
             time.sleep(random.randint(d_min, d_max))
 
         st.balloons()
         st.success("🎉 Campaign Finished!")
         
-        # --- 5. REPORT DOWNLOAD ---
+        # --- 5. DOWNLOAD REPORT ---
         if report_rows:
             res_df = pd.DataFrame(report_rows)
-            st.dataframe(res_df)
-            
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                res_df.to_excel(writer, index=False, sheet_name="Outreach Report")
-                
-                # Adjust column width for readability
-                worksheet = writer.sheets['Outreach Report']
+                res_df.to_excel(writer, index=False)
+                worksheet = writer.sheets['Sheet1']
                 worksheet.set_column('A:A', 25)
                 worksheet.set_column('E:E', 60)
             
-            st.download_button(
-                label="📥 Download Final Report",
-                data=buffer,
-                file_name="SEO_Outreach_Report.xlsx",
-                mime="application/vnd.ms-excel"
-            )
+            st.download_button("📥 Download Final Report", buffer, "SEO_Report.xlsx")
+
+# ==========================================
+# 6. INSTRUCTIONS SECTION (NEW)
+# ==========================================
+st.divider()
+with st.expander("📖 Guide: How to use this tool?", expanded=True):
+    st.markdown("""
+    <div class="instruction-box">
+    <h3>🚀 Step-by-Step Instructions</h3>
+    <ol>
+        <li><strong>Prepare Excel File:</strong> Ensure your file has these headers: <code>Name</code>, <code>Email</code>, <code>Company</code> (or Website).</li>
+        <li><strong>Configure Email:</strong> In the Sidebar, select your provider (e.g., Hostinger) and enter your Email/Password.</li>
+        <li><strong>Test Connection:</strong> Click the 🔌 <b>Test Connection</b> button in the sidebar to verify your login.</li>
+        <li><strong>Upload Data:</strong> Upload your .xlsx or .csv file in Step 1.</li>
+        <li><strong>Setup Templates:</strong> 
+            <ul>
+                <li>Go to Template 1 tab.</li>
+                <li>Enter Subject Lines (one per line). Use <code>{Name}</code> or <code>{Company}</code> placeholders.</li>
+                <li>Upload your HTML file containing the email body.</li>
+            </ul>
+        </li>
+        <li><strong>Start:</strong> Click <b>Start Campaign</b>. Don't close the tab until finished.</li>
+    </ol>
+    <p><strong>Note:</strong> If you use Gmail, you must use an <b>App Password</b>, not your regular password.</p>
+    </div>
+    """, unsafe_allow_html=True)
